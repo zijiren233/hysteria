@@ -73,6 +73,18 @@ func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Durat
 func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger server.TrafficLogger) {
 	v.logger.Info("用户列表自动更新服务已激活")
 
+	userList, err := v.getUserList(context.Background(), interval)
+	if err != nil {
+		v.logger.Error("获取用户列表失败", zap.Error(err))
+	} else {
+		newUsersMap := make(map[string]user, len(userList))
+		for _, user := range userList {
+			newUsersMap[user.UUID] = user
+		}
+		v.usersMap = newUsersMap
+		v.logger.Info("添加用户列表成功", zap.Int("count", len(userList)))
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -86,15 +98,21 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger s
 		for _, user := range userList {
 			newUsersMap[user.UUID] = user
 		}
+		if len(newUsersMap) != len(v.usersMap) {
+			v.logger.Info("用户数更新", zap.Int("old", len(v.usersMap)), zap.Int("new", len(newUsersMap)))
+		}
+
 		old := v.usersMap
 		v.lock.Lock()
 		v.usersMap = newUsersMap
 		v.lock.Unlock()
-		if trafficlogger != nil {
-			for uuid, info := range old {
-				if _, exists := newUsersMap[uuid]; !exists {
-					trafficlogger.NewKick(strconv.Itoa(info.ID))
-				}
+
+		if trafficlogger == nil {
+			continue
+		}
+		for uuid, info := range old {
+			if _, exists := newUsersMap[uuid]; !exists {
+				trafficlogger.NewKick(strconv.Itoa(info.ID))
 			}
 		}
 	}
@@ -109,5 +127,6 @@ func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64)
 	if user, exists := v.usersMap[auth]; exists {
 		return true, strconv.Itoa(user.ID)
 	}
+	v.logger.Warn("用户不存在", zap.String("auth", auth), zap.String("addr", addr.String()))
 	return false, ""
 }
