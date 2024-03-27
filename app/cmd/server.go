@@ -616,13 +616,12 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 			return configError{Field: "auth.v2board", Err: errors.New("v2board config error")}
 		}
 
-		hyConfig.Authenticator = &auth.V2boardApiProvider{
-			URL: fmt.Sprintf("%s?token=%s&node_id=%d&node_type=hysteria",
-				c.V2board.ApiHost+"/api/v1/server/UniProxy/user",
-				c.V2board.ApiKey,
-				c.V2board.NodeID,
-			),
-		}
+		hyConfig.Authenticator = auth.NewV2boardApiProvider(
+			logger,
+			c.V2board.ApiHost,
+			c.V2board.ApiKey,
+			c.V2board.NodeID,
+		)
 
 		return nil
 	default:
@@ -637,41 +636,29 @@ func (c *serverConfig) fillEventLogger(hyConfig *server.Config) error {
 
 func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 	if c.TrafficStats.Listen != "" {
-		tss := trafficlogger.NewTrafficStatsServer(c.TrafficStats.Secret)
+		tss := trafficlogger.NewTrafficStatsServer(logger, c.TrafficStats.Secret)
 		hyConfig.TrafficLogger = tss
-		// 添加定时更新用户使用流量协程
-		if c.V2board != nil && c.V2board.ApiHost != "" {
-			go auth.UpdateUsers(
-				fmt.Sprintf(
-					"%s?token=%s&node_id=%d&node_type=hysteria",
-					c.V2board.ApiHost+"/api/v1/server/UniProxy/user",
-					c.V2board.ApiKey,
-					c.V2board.NodeID,
-				),
-				time.Second*5,
-				hyConfig.TrafficLogger,
-			)
-			go hyConfig.TrafficLogger.PushTrafficToV2boardInterval(
-				fmt.Sprintf(
-					"%s?token=%s&node_id=%d&node_type=hysteria",
-					c.V2board.ApiHost+"/api/v1/server/UniProxy/push",
-					c.V2board.ApiKey,
-					c.V2board.NodeID,
-				),
-				time.Second*60,
-			)
-		}
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
-	} else {
-		go auth.UpdateUsers(
+	}
+
+	// 添加定时更新用户使用流量协程
+	if c.V2board != nil && c.V2board.ApiHost != "" {
+		p, ok := hyConfig.Authenticator.(*auth.V2boardApiProvider)
+		if !ok {
+			return configError{Field: "auth", Err: errors.New("auth type is not v2board")}
+		}
+		go p.UpdateUsers(
+			time.Second*5,
+			hyConfig.TrafficLogger,
+		)
+		go hyConfig.TrafficLogger.PushTrafficToV2boardInterval(
 			fmt.Sprintf(
 				"%s?token=%s&node_id=%d&node_type=hysteria",
-				c.V2board.ApiHost+"/api/v1/server/UniProxy/user",
+				c.V2board.ApiHost+"/api/v1/server/UniProxy/push",
 				c.V2board.ApiKey,
 				c.V2board.NodeID,
 			),
-			time.Second*5,
-			nil,
+			time.Second*60,
 		)
 	}
 	return nil

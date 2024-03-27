@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/apernet/hysteria/core/server"
+	"go.uber.org/zap"
 )
 
 const (
@@ -24,8 +24,9 @@ type TrafficStatsServer interface {
 	http.Handler
 }
 
-func NewTrafficStatsServer(secret string) TrafficStatsServer {
+func NewTrafficStatsServer(logger *zap.Logger, secret string) TrafficStatsServer {
 	return &trafficStatsServerImpl{
+		logger:   logger,
 		StatsMap: make(map[string]*trafficStatsEntry),
 		KickMap:  make(map[string]struct{}),
 		Secret:   secret,
@@ -38,14 +39,14 @@ type TrafficPushRequest struct {
 
 // 定时提交用户流量情况
 func (s *trafficStatsServerImpl) PushTrafficToV2boardInterval(url string, interval time.Duration) {
-	fmt.Println("用户流量情况监控已启动")
+	s.logger.Info("用户流量情况监控已启动")
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		if err := s.PushTrafficToV2board(url); err != nil {
-			fmt.Println("用户流量信息提交失败:", err)
+			s.logger.Error("用户流量信息提交失败", zap.Error(err))
 		}
 	}
 }
@@ -76,7 +77,6 @@ func (s *trafficStatsServerImpl) PushTrafficToV2board(url string) error {
 	// 发起HTTP请求并提交数据
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		fmt.Println(resp)
 		return err
 	}
 	defer resp.Body.Close()
@@ -93,6 +93,7 @@ func (s *trafficStatsServerImpl) PushTrafficToV2board(url string) error {
 }
 
 type trafficStatsServerImpl struct {
+	logger   *zap.Logger
 	Mutex    sync.RWMutex
 	StatsMap map[string]*trafficStatsEntry
 	KickMap  map[string]struct{}

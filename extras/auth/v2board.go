@@ -1,8 +1,8 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -10,38 +10,58 @@ import (
 	"time"
 
 	"github.com/apernet/hysteria/core/server"
+	"go.uber.org/zap"
 )
 
 var _ server.Authenticator = &V2boardApiProvider{}
 
 type V2boardApiProvider struct {
-	Client *http.Client
-	URL    string
+	client          *http.Client
+	logger          *zap.Logger
+	apiHost, apiKey string
+	nodeID          uint
+	usersMap        map[string]user
+	lock            sync.RWMutex
 }
 
-// 用户列表
-var (
-	usersMap map[string]User
-	lock     sync.Mutex
-)
+func NewV2boardApiProvider(logger *zap.Logger, apiHost, apiKey string, nodeID uint) *V2boardApiProvider {
+	return &V2boardApiProvider{
+		client:   &http.Client{},
+		logger:   logger,
+		apiHost:  apiHost,
+		apiKey:   apiKey,
+		nodeID:   nodeID,
+		usersMap: make(map[string]user),
+	}
+}
 
-type User struct {
+type user struct {
 	ID         int     `json:"id"`
 	UUID       string  `json:"uuid"`
 	SpeedLimit *uint32 `json:"speed_limit"`
 }
-type ResponseData struct {
-	Users []User `json:"users"`
+type responseData struct {
+	Users []user `json:"users"`
 }
 
-func getUserList(url string) ([]User, error) {
-	resp, err := http.Get(url)
+func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Duration) ([]user, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.apiHost+"/api/v1/server/UniProxy/user", nil)
+	if err != nil {
+		return nil, err
+	}
+	q := req.URL.Query()
+	q.Add("token", v.apiKey)
+	q.Add("node_id", strconv.Itoa(int(v.nodeID)))
+	q.Add("node_type", "hysteria")
+	resp, err := v.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var responseData ResponseData
+	var responseData responseData
 	err = json.NewDecoder(resp.Body).Decode(&responseData)
 	if err != nil {
 		return nil, err
@@ -50,43 +70,43 @@ func getUserList(url string) ([]User, error) {
 	return responseData.Users, nil
 }
 
-func UpdateUsers(url string, interval time.Duration, trafficlogger server.TrafficLogger) {
-	fmt.Println("用户列表自动更新服务已激活")
+func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger server.TrafficLogger) {
+	v.logger.Info("用户列表自动更新服务已激活")
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		userList, err := getUserList(url)
+		userList, err := v.getUserList(context.Background(), interval)
 		if err != nil {
-			fmt.Println("Error:", err)
+			v.logger.Error("获取用户列表失败", zap.Error(err))
 			continue
 		}
-		lock.Lock()
-		newUsersMap := make(map[string]User)
+		newUsersMap := make(map[string]user, len(userList))
 		for _, user := range userList {
 			newUsersMap[user.UUID] = user
 		}
+		old := v.usersMap
+		v.lock.Lock()
+		v.usersMap = newUsersMap
+		v.lock.Unlock()
 		if trafficlogger != nil {
-			for uuid := range usersMap {
+			for uuid, info := range old {
 				if _, exists := newUsersMap[uuid]; !exists {
-					trafficlogger.NewKick(strconv.Itoa(usersMap[uuid].ID))
+					trafficlogger.NewKick(strconv.Itoa(info.ID))
 				}
 			}
 		}
-
-		usersMap = newUsersMap
-		lock.Unlock()
 	}
 }
 
 // 验证代码
 func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64) (ok bool, id string) {
 	// 获取判断连接用户是否在用户列表内
-	lock.Lock()
-	defer lock.Unlock()
+	v.lock.RLock()
+	defer v.lock.RUnlock()
 
-	if user, exists := usersMap[auth]; exists {
+	if user, exists := v.usersMap[auth]; exists {
 		return true, strconv.Itoa(user.ID)
 	}
 	return false, ""
