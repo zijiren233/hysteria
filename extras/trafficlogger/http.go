@@ -11,6 +11,7 @@ import (
 
 	"github.com/apernet/hysteria/core/server"
 	"go.uber.org/zap"
+	"golang.org/x/exp/maps"
 )
 
 const (
@@ -34,7 +35,7 @@ func NewTrafficStatsServer(logger *zap.Logger, secret string) TrafficStatsServer
 }
 
 type TrafficPushRequest struct {
-	Data map[string][2]int64
+	Data map[string][2]uint64
 }
 
 // 定时提交用户流量情况
@@ -45,28 +46,44 @@ func (s *trafficStatsServerImpl) PushTrafficToV2boardInterval(url string, interv
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := s.PushTrafficToV2board(url); err != nil {
+		if err := s.pushTrafficToV2board(url); err != nil {
 			s.logger.Error("用户流量信息提交失败", zap.Error(err))
 		}
 	}
 }
 
-// 向v2board 提交用户流量使用情况
-func (s *trafficStatsServerImpl) PushTrafficToV2board(url string) error {
-	s.Mutex.Lock()         // 写锁，阻止其他操作 StatsMap 的并发访问
-	defer s.Mutex.Unlock() // 确保在函数退出时释放写锁
-
-	// 创建一个请求对象并填充数据
+// 向 v2board 提交用户流量使用情况
+func (s *trafficStatsServerImpl) pushTrafficToV2board(url string) (err error) {
+	s.Mutex.Lock()
 	request := TrafficPushRequest{
-		Data: make(map[string][2]int64),
+		Data: make(map[string][2]uint64),
 	}
 	for id, stats := range s.StatsMap {
-		request.Data[id] = [2]int64{int64(stats.Tx), int64(stats.Rx)}
+		request.Data[id] = [2]uint64{stats.Tx, stats.Rx}
 	}
-	// 如果不存在数据则跳过
+	// 清空流量记录
+	maps.Clear(s.StatsMap)
+	s.Mutex.Unlock()
+
 	if len(request.Data) == 0 {
 		return nil
 	}
+
+	defer func() {
+		if err != nil {
+			s.Mutex.Lock()
+			defer s.Mutex.Unlock()
+			for id, stats := range request.Data {
+				entry, ok := s.StatsMap[id]
+				if !ok {
+					entry = &trafficStatsEntry{}
+					s.StatsMap[id] = entry
+				}
+				entry.Tx += stats[0]
+				entry.Rx += stats[1]
+			}
+		}
+	}()
 
 	// 将请求对象转换为JSON
 	jsonData, err := json.Marshal(request.Data)
@@ -85,9 +102,6 @@ func (s *trafficStatsServerImpl) PushTrafficToV2board(url string) error {
 	if resp.StatusCode != http.StatusOK {
 		return errors.New("HTTP request failed with status code: " + resp.Status)
 	}
-
-	// 清空流量记录
-	s.StatsMap = make(map[string]*trafficStatsEntry)
 
 	return nil
 }
