@@ -55,6 +55,8 @@ func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Durat
 	q.Add("token", v.apiKey)
 	q.Add("node_id", strconv.Itoa(int(v.nodeID)))
 	q.Add("node_type", "hysteria")
+	req.URL.RawQuery = q.Encode()
+
 	resp, err := v.client.Do(req)
 	if err != nil {
 		return nil, err
