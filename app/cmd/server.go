@@ -28,6 +28,7 @@ import (
 	"github.com/apernet/hysteria/extras/obfs"
 	"github.com/apernet/hysteria/extras/outbounds"
 	"github.com/apernet/hysteria/extras/trafficlogger"
+	ocsp_stapling "github.com/zijiren233/go-ocsp_stapling"
 )
 
 const (
@@ -263,10 +264,16 @@ func (c *serverConfig) fillTLSConfig(hyConfig *server.Config) error {
 		}
 		// Use GetCertificate instead of Certificates so that
 		// users can update the cert without restarting the server.
-		hyConfig.TLSConfig.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key)
-			return &cert, err
+		cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key)
+		if err != nil {
+			return configError{Field: "tls", Err: fmt.Errorf("failed to load cert and key: %w", err)}
 		}
+		os, err := ocsp_stapling.NewOcspHandler(&cert)
+		if err != nil {
+			return configError{Field: "tls", Err: fmt.Errorf("failed to load cert and key: %w", err)}
+		}
+		os.Start()
+		hyConfig.TLSConfig.GetCertificate = os.GetCertificate
 	} else {
 		// ACME
 		dataDir := c.ACME.Dir
