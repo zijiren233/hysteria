@@ -132,7 +132,6 @@ func (s *trafficStatsServerImpl) Log(id string, tx, rx uint64) (ok bool) {
 		kick = true
 		delete(s.KickMap, id)
 	} else {
-		s.logger.Info(fmt.Sprintf("allowed map: %v", s.AllowedMap))
 		_, ok = s.AllowedMap[id]
 		if !ok {
 			kick = true
@@ -143,8 +142,6 @@ func (s *trafficStatsServerImpl) Log(id string, tx, rx uint64) (ok bool) {
 		s.logger.Info(fmt.Sprintf("用户 %s 已被踢出, 流量使用情况：上传 %d，下载 %d", id, tx, rx))
 		return false
 	}
-
-	s.logger.Debug(fmt.Sprintf("用户 %s 流量使用情况：上传 %d，下载 %d", id, tx, rx))
 
 	entry, ok := s.StatsMap[id]
 	if !ok {

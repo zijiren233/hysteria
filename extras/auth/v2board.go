@@ -88,8 +88,6 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger s
 			userIdList[i] = strconv.Itoa(user.ID)
 		}
 
-		v.logger.Debug("用户数更新", zap.Int("old", len(v.usersMap)), zap.Int("new", len(newUsersMap)))
-
 		v.lock.Lock()
 		v.usersMap = newUsersMap
 		v.lock.Unlock()
