@@ -197,5 +197,5 @@ type EventLogger interface {
 type TrafficLogger interface {
 	Log(id string, tx, rx uint64) (ok bool)
 	PushTrafficToV2boardInterval(url string, interval time.Duration)
-	NewKick(id string) (ok bool)
+	SetAllowedList(allowedList []string)
 }

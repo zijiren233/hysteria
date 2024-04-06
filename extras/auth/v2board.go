@@ -20,7 +20,7 @@ type V2boardApiProvider struct {
 	logger          *zap.Logger
 	apiHost, apiKey string
 	nodeID          uint
-	usersMap        map[string]user
+	usersMap        map[string]*user
 	lock            sync.RWMutex
 }
 
@@ -31,7 +31,7 @@ func NewV2boardApiProvider(logger *zap.Logger, apiHost, apiKey string, nodeID ui
 		apiHost:  apiHost,
 		apiKey:   apiKey,
 		nodeID:   nodeID,
-		usersMap: make(map[string]user),
+		usersMap: make(map[string]*user),
 	}
 }
 
@@ -41,10 +41,10 @@ type user struct {
 	SpeedLimit *uint32 `json:"speed_limit"`
 }
 type responseData struct {
-	Users []user `json:"users"`
+	Users []*user `json:"users"`
 }
 
-func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Duration) ([]user, error) {
+func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Duration) ([]*user, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.apiHost+"/api/v1/server/UniProxy/user", nil)
@@ -75,48 +75,30 @@ func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Durat
 func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger server.TrafficLogger) {
 	v.logger.Info("用户列表自动更新服务已激活")
 
-	userList, err := v.getUserList(context.Background(), interval)
-	if err != nil {
-		v.logger.Error("获取用户列表失败", zap.Error(err))
-	} else {
-		newUsersMap := make(map[string]user, len(userList))
-		for _, user := range userList {
-			newUsersMap[user.UUID] = user
-		}
-		v.usersMap = newUsersMap
-		v.logger.Info("添加用户列表成功", zap.Int("count", len(userList)))
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
+	for {
 		userList, err := v.getUserList(context.Background(), interval)
 		if err != nil {
 			v.logger.Error("获取用户列表失败", zap.Error(err))
 			continue
 		}
-		newUsersMap := make(map[string]user, len(userList))
-		for _, user := range userList {
+		newUsersMap := make(map[string]*user, len(userList))
+		userIdList := make([]string, len(userList))
+		for i, user := range userList {
 			newUsersMap[user.UUID] = user
-		}
-		if len(newUsersMap) != len(v.usersMap) {
-			v.logger.Info("用户数更新", zap.Int("old", len(v.usersMap)), zap.Int("new", len(newUsersMap)))
+			userIdList[i] = strconv.Itoa(user.ID)
 		}
 
-		old := v.usersMap
+		v.logger.Debug("用户数更新", zap.Int("old", len(v.usersMap)), zap.Int("new", len(newUsersMap)))
+
 		v.lock.Lock()
 		v.usersMap = newUsersMap
 		v.lock.Unlock()
 
-		if trafficlogger == nil {
-			continue
+		if trafficlogger != nil {
+			trafficlogger.SetAllowedList(userIdList)
 		}
-		for uuid, info := range old {
-			if _, exists := newUsersMap[uuid]; !exists {
-				trafficlogger.NewKick(info.UUID)
-			}
-		}
+
+		time.Sleep(interval)
 	}
 }
 

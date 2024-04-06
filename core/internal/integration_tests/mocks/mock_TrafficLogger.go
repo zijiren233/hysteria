@@ -39,7 +39,7 @@ func (_m *MockTrafficLogger) PushTrafficToV2boardInterval(url string, interval t
 	return
 }
 
-func (_m *MockTrafficLogger) NewKick(id string) (ok bool) {
+func (_m *MockTrafficLogger) SetAllowedList(ids []string) {
 	return
 }
 

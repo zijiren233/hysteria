@@ -659,7 +659,7 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 			return configError{Field: "auth", Err: errors.New("auth type is not v2board")}
 		}
 		go p.UpdateUsers(
-			time.Second*5,
+			time.Second*15,
 			hyConfig.TrafficLogger,
 		)
 		go hyConfig.TrafficLogger.PushTrafficToV2boardInterval(

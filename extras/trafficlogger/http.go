@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -27,10 +28,11 @@ type TrafficStatsServer interface {
 
 func NewTrafficStatsServer(logger *zap.Logger, secret string) TrafficStatsServer {
 	return &trafficStatsServerImpl{
-		logger:   logger,
-		StatsMap: make(map[string]*trafficStatsEntry),
-		KickMap:  make(map[string]struct{}),
-		Secret:   secret,
+		logger:     logger,
+		StatsMap:   make(map[string]*trafficStatsEntry),
+		KickMap:    make(map[string]struct{}),
+		Secret:     secret,
+		AllowedMap: make(map[string]struct{}),
 	}
 }
 
@@ -107,11 +109,12 @@ func (s *trafficStatsServerImpl) pushTrafficToV2board(url string) (err error) {
 }
 
 type trafficStatsServerImpl struct {
-	logger   *zap.Logger
-	Mutex    sync.RWMutex
-	StatsMap map[string]*trafficStatsEntry
-	KickMap  map[string]struct{}
-	Secret   string
+	logger     *zap.Logger
+	Mutex      sync.RWMutex
+	StatsMap   map[string]*trafficStatsEntry
+	KickMap    map[string]struct{}
+	Secret     string
+	AllowedMap map[string]struct{}
 }
 
 type trafficStatsEntry struct {
@@ -123,11 +126,25 @@ func (s *trafficStatsServerImpl) Log(id string, tx, rx uint64) (ok bool) {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 
+	var tick bool
 	_, ok = s.KickMap[id]
 	if ok {
+		tick = true
 		delete(s.KickMap, id)
+	} else {
+		s.logger.Info(fmt.Sprintf("allowed map: %v", s.AllowedMap))
+		_, ok = s.AllowedMap[id]
+		if !ok {
+			tick = true
+		}
+	}
+
+	if tick {
+		s.logger.Info(fmt.Sprintf("用户 %s 已被踢出, 流量使用情况：上传 %d，下载 %d", id, tx, rx))
 		return false
 	}
+
+	s.logger.Debug(fmt.Sprintf("用户 %s 流量使用情况：上传 %d，下载 %d", id, tx, rx))
 
 	entry, ok := s.StatsMap[id]
 	if !ok {
@@ -199,9 +216,12 @@ func (s *trafficStatsServerImpl) kick(w http.ResponseWriter, r *http.Request) {
 }
 
 // 踢出用户名单
-func (s *trafficStatsServerImpl) NewKick(id string) bool {
+func (s *trafficStatsServerImpl) SetAllowedList(ids []string) {
+	list := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		list[id] = struct{}{}
+	}
 	s.Mutex.Lock()
-	s.KickMap[id] = struct{}{}
+	s.AllowedMap = list
 	s.Mutex.Unlock()
-	return true
 }
