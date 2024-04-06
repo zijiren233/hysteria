@@ -114,7 +114,7 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration, trafficlogger s
 		}
 		for uuid, info := range old {
 			if _, exists := newUsersMap[uuid]; !exists {
-				trafficlogger.NewKick(strconv.Itoa(info.ID))
+				trafficlogger.NewKick(info.UUID)
 			}
 		}
 	}
