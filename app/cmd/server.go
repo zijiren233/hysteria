@@ -269,11 +269,15 @@ func (c *serverConfig) fillTLSConfig(hyConfig *server.Config) error {
 			return configError{Field: "tls", Err: fmt.Errorf("failed to load cert and key: %w", err)}
 		}
 		os, err := ocsp_stapling.NewOcspHandler(&cert)
-		if err != nil {
-			return configError{Field: "tls", Err: fmt.Errorf("failed to load cert and key: %w", err)}
+		if err == nil {
+			os.Start()
+			hyConfig.TLSConfig.GetCertificate = os.GetCertificate
+		} else {
+			logger.Warn("failed to start ocsp stapling", zap.Error(err))
+			hyConfig.TLSConfig.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				return &cert, nil
+			}
 		}
-		os.Start()
-		hyConfig.TLSConfig.GetCertificate = os.GetCertificate
 	} else {
 		// ACME
 		dataDir := c.ACME.Dir
