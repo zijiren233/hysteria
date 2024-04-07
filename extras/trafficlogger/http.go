@@ -32,7 +32,7 @@ func NewTrafficStatsServer(logger *zap.Logger, secret string) TrafficStatsServer
 		StatsMap:   make(map[string]*trafficStatsEntry),
 		KickMap:    make(map[string]struct{}),
 		Secret:     secret,
-		AllowedMap: make(map[string]struct{}),
+		AllowedMap: nil,
 	}
 }
 
@@ -131,7 +131,7 @@ func (s *trafficStatsServerImpl) Log(id string, tx, rx uint64) (ok bool) {
 	if ok {
 		kick = true
 		delete(s.KickMap, id)
-	} else {
+	} else if s.AllowedMap != nil {
 		_, ok = s.AllowedMap[id]
 		if !ok {
 			kick = true
@@ -212,11 +212,15 @@ func (s *trafficStatsServerImpl) kick(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// 踢出用户名单
+// SetAllowedList 设置允许的用户列表
+// 如果ids为nil，则表示不限制用户
 func (s *trafficStatsServerImpl) SetAllowedList(ids []string) {
-	list := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		list[id] = struct{}{}
+	var list map[string]struct{} = nil
+	if ids != nil {
+		list = make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			list[id] = struct{}{}
+		}
 	}
 	s.Mutex.Lock()
 	s.AllowedMap = list
