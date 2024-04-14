@@ -28,6 +28,7 @@ import (
 	"github.com/apernet/hysteria/extras/obfs"
 	"github.com/apernet/hysteria/extras/outbounds"
 	"github.com/apernet/hysteria/extras/trafficlogger"
+	ocsp_stapling "github.com/zijiren233/go-ocsp_stapling"
 )
 
 const (
@@ -45,6 +46,7 @@ func init() {
 }
 
 type serverConfig struct {
+	V2board               *v2boardConfig              `mapstructure:"v2board"`
 	Listen                string                      `mapstructure:"listen"`
 	Obfs                  serverConfigObfs            `mapstructure:"obfs"`
 	TLS                   *serverConfigTLS            `mapstructure:"tls"`
@@ -61,6 +63,12 @@ type serverConfig struct {
 	Outbounds             []serverConfigOutboundEntry `mapstructure:"outbounds"`
 	TrafficStats          serverConfigTrafficStats    `mapstructure:"trafficStats"`
 	Masquerade            serverConfigMasquerade      `mapstructure:"masquerade"`
+}
+
+type v2boardConfig struct {
+	ApiHost string `mapstructure:"apiHost"`
+	ApiKey  string `mapstructure:"apiKey"`
+	NodeID  uint   `mapstructure:"nodeID"`
 }
 
 type serverConfigObfsSalamander struct {
@@ -256,9 +264,19 @@ func (c *serverConfig) fillTLSConfig(hyConfig *server.Config) error {
 		}
 		// Use GetCertificate instead of Certificates so that
 		// users can update the cert without restarting the server.
-		hyConfig.TLSConfig.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key)
-			return &cert, err
+		cert, err := tls.LoadX509KeyPair(c.TLS.Cert, c.TLS.Key)
+		if err != nil {
+			return configError{Field: "tls", Err: fmt.Errorf("failed to load cert and key: %w", err)}
+		}
+		os, err := ocsp_stapling.NewOcspHandler(&cert)
+		if err == nil {
+			os.Start()
+			hyConfig.TLSConfig.GetCertificate = os.GetCertificate
+		} else {
+			logger.Warn("failed to start ocsp stapling", zap.Error(err))
+			hyConfig.TLSConfig.GetCertificate = func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				return &cert, nil
+			}
 		}
 	} else {
 		// ACME
@@ -601,6 +619,22 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 		}
 		hyConfig.Authenticator = &auth.CommandAuthenticator{Cmd: c.Auth.Command}
 		return nil
+	case "v2board":
+		// 定时获取用户列表并储存
+		// 判断URL是否存在
+		v2boardConfig := c.V2board
+		if v2boardConfig.ApiHost == "" || v2boardConfig.ApiKey == "" || v2boardConfig.NodeID == 0 {
+			return configError{Field: "auth.v2board", Err: errors.New("v2board config error")}
+		}
+		v2bAuth := auth.NewV2boardApiProvider(
+			logger,
+			c.V2board.ApiHost,
+			c.V2board.ApiKey,
+			c.V2board.NodeID,
+		)
+		go v2bAuth.UpdateUsers(time.Minute)
+		hyConfig.Authenticator = v2bAuth
+		return nil
 	default:
 		return configError{Field: "auth.type", Err: errors.New("unsupported auth type")}
 	}
@@ -612,7 +646,19 @@ func (c *serverConfig) fillEventLogger(hyConfig *server.Config) error {
 }
 
 func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
+	if c.V2board != nil && c.V2board.ApiHost != "" {
+		p, ok := hyConfig.Authenticator.(*auth.V2boardApiProvider)
+		if !ok {
+			return configError{Field: "auth", Err: errors.New("auth type is not v2board")}
+		}
+		go p.PushTrafficToV2boardInterval(time.Minute)
+		hyConfig.TrafficLogger = p
+	}
 	if c.TrafficStats.Listen != "" {
+		if hyConfig.Authenticator != nil {
+			logger.Warn("V2board API is enabled, traffic stats server will not be started")
+			return nil
+		}
 		tss := trafficlogger.NewTrafficStatsServer(c.TrafficStats.Secret)
 		hyConfig.TrafficLogger = tss
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
@@ -726,6 +772,19 @@ func (c *serverConfig) Config() (*server.Config, error) {
 	return hyConfig, nil
 }
 
+type ResponseNodeInfo struct {
+	Host       string `json:"host"`
+	ServerPort uint   `json:"server_port"`
+	ServerName string `json:"server_name"`
+	UpMbps     uint   `json:"down_mbps"`
+	DownMbps   uint   `json:"up_mbps"`
+	Obfs       string `json:"obfs"`
+	BaseConfig struct {
+		PushInterval int `json:"push_interval"`
+		PullInterval int `json:"pull_interval"`
+	} `json:"base_config"`
+}
+
 func runServer(cmd *cobra.Command, args []string) {
 	logger.Info("server mode")
 
@@ -736,6 +795,40 @@ func runServer(cmd *cobra.Command, args []string) {
 	if err := viper.Unmarshal(&config); err != nil {
 		logger.Fatal("failed to parse server config", zap.Error(err))
 	}
+
+	// 如果配置了v2board 则自动获取监听端口、obfs
+	if config.V2board != nil && config.V2board.ApiHost != "" {
+		queryParams := url.Values{}
+		queryParams.Add("token", config.V2board.ApiKey)
+		queryParams.Add("node_id", strconv.Itoa(int(config.V2board.NodeID)))
+		queryParams.Add("node_type", "hysteria")
+		nodeInfoUrl := config.V2board.ApiHost + "/api/v1/server/UniProxy/config?" + queryParams.Encode()
+		resp, err := http.Get(nodeInfoUrl)
+		if err != nil {
+			logger.Fatal("failed to client v2board api to get nodeInfo", zap.Error(err))
+		}
+		defer resp.Body.Close()
+		var responseNodeInfo ResponseNodeInfo
+		err = json.NewDecoder(resp.Body).Decode(&responseNodeInfo)
+		if err != nil {
+			logger.Fatal("failed to unmarshal v2board reaponse", zap.Error(err))
+		}
+		// 给 hy的端口、obfs、上行下行进行赋值
+		if responseNodeInfo.ServerPort != 0 {
+			config.Listen = ":" + strconv.Itoa(int(responseNodeInfo.ServerPort))
+		}
+		if responseNodeInfo.DownMbps != 0 {
+			config.Bandwidth.Down = strconv.Itoa(int(responseNodeInfo.DownMbps)) + "Mbps"
+		}
+		if responseNodeInfo.UpMbps != 0 {
+			config.Bandwidth.Up = strconv.Itoa(int(responseNodeInfo.UpMbps)) + "Mbps"
+		}
+		if responseNodeInfo.Obfs != "" {
+			config.Obfs.Type = "salamander"
+			config.Obfs.Salamander.Password = responseNodeInfo.Obfs
+		}
+	}
+
 	hyConfig, err := config.Config()
 	if err != nil {
 		logger.Fatal("failed to load server config", zap.Error(err))
