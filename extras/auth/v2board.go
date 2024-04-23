@@ -30,21 +30,19 @@ type V2boardApiProvider struct {
 	apiHost, apiKey string
 	nodeID          uint
 	usersMap        map[string]*user              // uuid -> user
-	usersMapByID    map[string]*user              // id -> user
 	statsMap        map[string]*trafficStatsEntry // id -> stats
 	lock            sync.RWMutex
 }
 
 func NewV2boardApiProvider(logger *zap.Logger, apiHost, apiKey string, nodeID uint) *V2boardApiProvider {
 	return &V2boardApiProvider{
-		client:       &http.Client{},
-		logger:       logger,
-		apiHost:      apiHost,
-		apiKey:       apiKey,
-		nodeID:       nodeID,
-		usersMap:     make(map[string]*user),
-		usersMapByID: make(map[string]*user),
-		statsMap:     make(map[string]*trafficStatsEntry),
+		client:   &http.Client{},
+		logger:   logger,
+		apiHost:  apiHost,
+		apiKey:   apiKey,
+		nodeID:   nodeID,
+		usersMap: make(map[string]*user),
+		statsMap: make(map[string]*trafficStatsEntry),
 	}
 }
 
@@ -97,15 +95,12 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration) {
 			continue
 		}
 		newUsersMap := make(map[string]*user, len(userList))
-		newUsersMapByID := make(map[string]*user, len(userList))
 		for _, user := range userList {
 			newUsersMap[user.UUID] = user
-			newUsersMapByID[strconv.Itoa(user.ID)] = user
 		}
 
 		v.lock.Lock()
 		v.usersMap = newUsersMap
-		v.usersMapByID = newUsersMapByID
 		v.lock.Unlock()
 
 		time.Sleep(interval)
@@ -113,31 +108,31 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration) {
 }
 
 // 验证代码
-func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64) (ok bool, id string) {
+func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64) (ok bool, uuid string) {
 	// 获取判断连接用户是否在用户列表内
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if user, exists := v.usersMap[auth]; exists {
-		return true, strconv.Itoa(user.ID)
+	if _, exists := v.usersMap[auth]; exists {
+		return true, auth
 	}
 	v.logger.Debug("用户不存在", zap.String("auth", auth), zap.String("addr", addr.String()))
 	return false, ""
 }
 
-func (v *V2boardApiProvider) Log(id string, tx uint64, rx uint64) bool {
+func (v *V2boardApiProvider) Log(uuid string, tx uint64, rx uint64) bool {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	_, ok := v.usersMapByID[id]
+	user, ok := v.usersMap[uuid]
 	if !ok {
 		return false
 	}
 
-	entry, ok := v.statsMap[id]
+	entry, ok := v.statsMap[strconv.Itoa(user.ID)]
 	if !ok {
 		entry = &trafficStatsEntry{}
-		v.statsMap[id] = entry
+		v.statsMap[strconv.Itoa(user.ID)] = entry
 	}
 	entry.Tx += tx
 	entry.Rx += rx
