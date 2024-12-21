@@ -1,9 +1,9 @@
 package forwarding
 
 import (
-	"io"
 	"net"
 
+	"github.com/apernet/hysteria/app/v2/internal/utils"
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
@@ -51,11 +51,11 @@ func (t *TCPTunnel) handle(conn net.Conn) {
 	// Start forwarding
 	copyErrChan := make(chan error, 2)
 	go func() {
-		_, copyErr := io.Copy(rc, conn)
+		_, copyErr := utils.CopyBuffer(rc, conn)
 		copyErrChan <- copyErr
 	}()
 	go func() {
-		_, copyErr := io.Copy(conn, rc)
+		_, copyErr := utils.CopyBuffer(conn, rc)
 		copyErrChan <- copyErr
 	}()
 	closeErr = <-copyErrChan

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apernet/hysteria/app/v2/internal/utils"
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
@@ -168,11 +169,11 @@ func (s *Server) handleConnect(conn net.Conn, req *http.Request) {
 	_ = sendSimpleResponse(conn, req, http.StatusOK)
 	copyErrChan := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(rConn, conn)
+		_, err := utils.CopyBuffer(rConn, conn)
 		copyErrChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(conn, rConn)
+		_, err := utils.CopyBuffer(conn, rConn)
 		copyErrChan <- err
 	}()
 	closeErr = <-copyErrChan

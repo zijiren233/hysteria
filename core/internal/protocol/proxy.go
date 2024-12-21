@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/apernet/hysteria/core/v2/errors"
+	"github.com/apernet/hysteria/core/v2/internal/utils"
 
 	"github.com/apernet/quic-go/quicvarint"
 )
@@ -58,7 +59,7 @@ func ReadTCPRequest(r io.Reader) (string, error) {
 		return "", errors.ProtocolError{Message: "invalid padding length"}
 	}
 	if paddingLen > 0 {
-		_, err = io.CopyN(io.Discard, r, int64(paddingLen))
+		_, err = utils.CopyBufferN(io.Discard, r, int64(paddingLen))
 		if err != nil {
 			return "", err
 		}
@@ -120,7 +121,7 @@ func ReadTCPResponse(r io.Reader) (bool, string, error) {
 		return false, "", errors.ProtocolError{Message: "invalid padding length"}
 	}
 	if paddingLen > 0 {
-		_, err = io.CopyN(io.Discard, r, int64(paddingLen))
+		_, err = utils.CopyBufferN(io.Discard, r, int64(paddingLen))
 		if err != nil {
 			return false, "", err
 		}

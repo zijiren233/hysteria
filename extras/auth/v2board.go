@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/server"
+	"github.com/apernet/quic-go"
 	"go.uber.org/zap"
 	"golang.org/x/exp/maps"
 )
@@ -114,11 +115,12 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration) {
 func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64) (ok bool, uuid string) {
 	// 获取判断连接用户是否在用户列表内
 	v.lock.RLock()
-	defer v.lock.RUnlock()
 
 	if _, exists := v.usersMap[auth]; exists {
+		v.lock.RUnlock()
 		return true, auth
 	}
+	v.lock.RUnlock()
 	v.logger.Debug("用户不存在", zap.String("auth", auth), zap.String("addr", addr.String()))
 	return false, ""
 }
@@ -132,10 +134,11 @@ func (v *V2boardApiProvider) LogTraffic(uuid string, tx uint64, rx uint64) bool 
 		return false
 	}
 
-	entry, ok := v.statsMap[strconv.Itoa(user.ID)]
+	userID := strconv.Itoa(user.ID)
+	entry, ok := v.statsMap[userID]
 	if !ok {
 		entry = &trafficStatsEntry{}
-		v.statsMap[strconv.Itoa(user.ID)] = entry
+		v.statsMap[userID] = entry
 	}
 	entry.Tx += tx
 	entry.Rx += rx
@@ -174,6 +177,11 @@ func (v *V2boardApiProvider) PushTrafficToV2boardInterval(interval time.Duration
 // 向 v2board 提交用户流量使用情况
 func (v *V2boardApiProvider) pushTrafficToV2board(url string) (err error) {
 	v.lock.Lock()
+	if len(v.statsMap) == 0 {
+		v.lock.Unlock()
+		return nil
+	}
+
 	request := TrafficPushRequest{
 		Data: make(map[string][2]uint64, len(v.statsMap)),
 	}
@@ -223,4 +231,10 @@ func (v *V2boardApiProvider) pushTrafficToV2board(url string) (err error) {
 	}
 
 	return nil
+}
+
+func (v *V2boardApiProvider) TraceStream(stream quic.Stream, stats *server.StreamStats) {
+}
+
+func (v *V2boardApiProvider) UntraceStream(stream quic.Stream) {
 }
