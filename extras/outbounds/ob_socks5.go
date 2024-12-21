@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/apernet/hysteria/extras/v2/utils"
 	"github.com/txthinking/socks5"
 )
 
@@ -205,7 +206,7 @@ func newSOCKS5UDPConn(tcpConn net.Conn, udpAddr string) (*socks5UDPConn, error) 
 }
 
 func (c *socks5UDPConn) hold() {
-	_, _ = io.Copy(io.Discard, c.tcpConn)
+	_, _ = utils.CopyBuffer(io.Discard, c.tcpConn)
 	_ = c.tcpConn.Close()
 	_ = c.udpConn.Close()
 }

@@ -3,7 +3,6 @@ package tun
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/sagernet/sing/common/network"
 	"go.uber.org/zap"
 
+	"github.com/apernet/hysteria/app/v2/internal/utils"
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
@@ -125,11 +125,11 @@ func (t *tunHandler) NewConnection(ctx context.Context, conn net.Conn, m metadat
 		copyErrChan <- ctx.Err()
 	}()
 	go func() {
-		_, copyErr := io.Copy(rc, conn)
+		_, copyErr := utils.CopyBuffer(rc, conn)
 		copyErrChan <- copyErr
 	}()
 	go func() {
-		_, copyErr := io.Copy(conn, rc)
+		_, copyErr := utils.CopyBuffer(conn, rc)
 		copyErrChan <- copyErr
 	}()
 	closeErr = <-copyErrChan
