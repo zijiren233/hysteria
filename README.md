@@ -21,6 +21,32 @@
 
 ---
 
+### 示例配置
+
+```yaml
+v2board:
+  apiHost: https://面板地址
+  apiKey: 面板节点密钥
+  nodeID: 节点ID
+tls:
+  type: tls
+  cert: /etc/hysteria/tls.crt
+  key: /etc/hysteria/tls.key
+auth:
+  type: v2board
+trafficStats:
+  listen: 127.0.0.1:7653
+acl: 
+  inline: 
+    - reject(10.0.0.0/8)
+    - reject(172.16.0.0/12)
+    - reject(192.168.0.0/16)
+    - reject(127.0.0.0/8)
+    - reject(fc00::/7)
+```
+
+---
+
 <div class="feature-grid">
   <div>
     <h3>🛠️ Jack of all trades</h3>
