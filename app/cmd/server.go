@@ -789,7 +789,7 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 			c.V2board.ApiKey,
 			c.V2board.NodeID,
 		)
-		go v2bAuth.UpdateUsers(time.Minute * 3)
+		go v2bAuth.UpdateUsers(time.Minute * 5)
 		hyConfig.Authenticator = v2bAuth
 		return nil
 	default:
@@ -808,7 +808,7 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 		if !ok {
 			return configError{Field: "auth", Err: errors.New("auth type is not v2board")}
 		}
-		go p.PushTrafficToV2boardInterval(time.Minute * 3)
+		go p.PushTrafficToV2boardInterval(time.Minute * 5)
 		hyConfig.TrafficLogger = p
 	}
 	if c.TrafficStats.Listen != "" {
