@@ -7,6 +7,7 @@ import (
 
 	"github.com/txthinking/socks5"
 
+	"github.com/apernet/hysteria/app/v2/internal/utils"
 	"github.com/apernet/hysteria/core/v2/client"
 )
 
@@ -147,11 +148,11 @@ func (s *Server) handleTCP(conn net.Conn, req *socks5.Request) {
 	_ = sendSimpleReply(conn, socks5.RepSuccess)
 	copyErrChan := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(rConn, conn)
+		_, err := utils.CopyBuffer(rConn, conn)
 		copyErrChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(conn, rConn)
+		_, err := utils.CopyBuffer(conn, rConn)
 		copyErrChan <- err
 	}()
 	closeErr = <-copyErrChan
@@ -214,7 +215,7 @@ func (s *Server) handleUDP(conn net.Conn, req *socks5.Request) {
 		errChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(io.Discard, conn)
+		_, err := utils.CopyBuffer(io.Discard, conn)
 		errChan <- err
 	}()
 	closeErr = <-errChan

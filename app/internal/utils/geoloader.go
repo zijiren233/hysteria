@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"time"
@@ -72,7 +71,7 @@ func (l *GeoLoader) downloadAndCheck(filename, url string, checkFunc func(filena
 	}
 	defer os.Remove(f.Name())
 
-	_, err = io.Copy(f, resp.Body)
+	_, err = CopyBuffer(f, resp.Body)
 	if err != nil {
 		f.Close()
 		l.DownloadErrFunc(err)

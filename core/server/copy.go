@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"github.com/apernet/hysteria/core/v2/internal/utils"
 )
 
 var errDisconnect = errors.New("traffic logger requested disconnect")
@@ -57,11 +59,11 @@ func copyTwoWayEx(id string, serverRw, remoteRw io.ReadWriter, l TrafficLogger, 
 func copyTwoWay(serverRw, remoteRw io.ReadWriter) error {
 	errChan := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(serverRw, remoteRw)
+		_, err := utils.CopyBuffer(serverRw, remoteRw)
 		errChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(remoteRw, serverRw)
+		_, err := utils.CopyBuffer(remoteRw, serverRw)
 		errChan <- err
 	}()
 	// Block until one of the two goroutines returns
