@@ -78,6 +78,7 @@ type v2boardConfig struct {
 	ApiHost string `mapstructure:"apiHost"`
 	ApiKey  string `mapstructure:"apiKey"`
 	NodeID  uint   `mapstructure:"nodeID"`
+	TrafficThreshold uint64 `mapstructure:"trafficThreshold"`
 }
 
 type serverConfigObfsSalamander struct {
@@ -788,6 +789,7 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 			c.V2board.ApiHost,
 			c.V2board.ApiKey,
 			c.V2board.NodeID,
+			c.V2board.TrafficThreshold,
 		)
 		go v2bAuth.UpdateUsers(time.Minute * 5)
 		hyConfig.Authenticator = v2bAuth
