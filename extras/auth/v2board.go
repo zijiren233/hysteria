@@ -15,7 +15,6 @@ import (
 	"github.com/apernet/hysteria/core/v2/server"
 	"github.com/apernet/quic-go"
 	"go.uber.org/zap"
-	"golang.org/x/exp/maps"
 )
 
 var (
@@ -29,24 +28,31 @@ type trafficStatsEntry struct {
 }
 
 type V2boardApiProvider struct {
-	client          *http.Client
-	logger          *zap.Logger
-	apiHost, apiKey string
-	nodeID          uint
-	usersMap        map[string]*user              // uuid -> user
-	statsMap        map[string]*trafficStatsEntry // id -> stats
-	lock            sync.RWMutex
+	client           *http.Client
+	logger           *zap.Logger
+	apiHost, apiKey  string
+	nodeID           uint
+	usersMap         map[string]*user              // uuid -> user
+	statsMap         map[string]*trafficStatsEntry // id -> stats
+	lock             sync.RWMutex
+	trafficThreshold uint64 // 流量推送阈值 (单位: kb)
 }
 
-func NewV2boardApiProvider(logger *zap.Logger, apiHost, apiKey string, nodeID uint) *V2boardApiProvider {
+func NewV2boardApiProvider(
+	logger *zap.Logger,
+	apiHost, apiKey string,
+	nodeID uint,
+	trafficThreshold uint64,
+) *V2boardApiProvider {
 	return &V2boardApiProvider{
-		client:   &http.Client{},
-		logger:   logger,
-		apiHost:  apiHost,
-		apiKey:   apiKey,
-		nodeID:   nodeID,
-		usersMap: make(map[string]*user),
-		statsMap: make(map[string]*trafficStatsEntry),
+		client:           &http.Client{},
+		logger:           logger,
+		apiHost:          apiHost,
+		apiKey:           apiKey,
+		nodeID:           nodeID,
+		usersMap:         make(map[string]*user),
+		statsMap:         make(map[string]*trafficStatsEntry),
+		trafficThreshold: trafficThreshold,
 	}
 }
 
@@ -60,10 +66,18 @@ type responseData struct {
 	Users []*user `json:"users"`
 }
 
-func (v *V2boardApiProvider) getUserList(ctx context.Context, timeout time.Duration) ([]*user, error) {
+func (v *V2boardApiProvider) getUserList(
+	ctx context.Context,
+	timeout time.Duration,
+) ([]*user, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.apiHost+"/api/v1/server/UniProxy/user", nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		v.apiHost+"/api/v1/server/UniProxy/user",
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -112,10 +126,12 @@ func (v *V2boardApiProvider) UpdateUsers(interval time.Duration) {
 }
 
 // 验证代码
-func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64) (ok bool, uuid string) {
-	// 获取判断连接用户是否在用户列表内
+func (v *V2boardApiProvider) Authenticate(
+	addr net.Addr,
+	auth string,
+	tx uint64,
+) (ok bool, uuid string) {
 	v.lock.RLock()
-
 	if _, exists := v.usersMap[auth]; exists {
 		v.lock.RUnlock()
 		return true, auth
@@ -125,7 +141,7 @@ func (v *V2boardApiProvider) Authenticate(addr net.Addr, auth string, tx uint64)
 	return false, ""
 }
 
-func (v *V2boardApiProvider) LogTraffic(uuid string, tx uint64, rx uint64) bool {
+func (v *V2boardApiProvider) LogTraffic(uuid string, tx, rx uint64) bool {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
@@ -185,11 +201,16 @@ func (v *V2boardApiProvider) pushTrafficToV2board(url string) (err error) {
 	request := TrafficPushRequest{
 		Data: make(map[string][2]uint64, len(v.statsMap)),
 	}
+
 	for id, stats := range v.statsMap {
+		totalKBytes := stats.Tx + stats.Rx
+		if totalKBytes*1024 < v.trafficThreshold {
+			continue
+		}
 		request.Data[id] = [2]uint64{stats.Tx, stats.Rx}
+		delete(v.statsMap, id)
 	}
-	// 清空流量记录
-	maps.Clear(v.statsMap)
+
 	v.lock.Unlock()
 
 	if len(request.Data) == 0 {
@@ -225,7 +246,7 @@ func (v *V2boardApiProvider) pushTrafficToV2board(url string) (err error) {
 	}
 	defer resp.Body.Close()
 
-	// 检查HTTP响应状态，处理错误等
+	// 检查HTTP响应状态
 	if resp.StatusCode != http.StatusOK {
 		return errors.New("HTTP request failed with status code: " + resp.Status)
 	}
