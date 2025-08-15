@@ -2,7 +2,9 @@ v2board:
   apiHost: http://localhost
   apiKey: test
   nodeID: 1
-  trafficThreshold: 1024
+  trafficThreshold: 1024            # 流量推送阈值，单位: KB
+  userSyncInterval: 300             # 拉取用户列表间隔，单位: 秒，默认 300 秒（5分钟）
+  trafficSyncInterval: 300          # 推送流量统计间隔，单位: 秒，默认 300 秒（5分钟）
 
 listen: :8443
 
