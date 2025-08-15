@@ -79,6 +79,8 @@ type v2boardConfig struct {
 	ApiKey  string `mapstructure:"apiKey"`
 	NodeID  uint   `mapstructure:"nodeID"`
 	TrafficThreshold uint64 `mapstructure:"trafficThreshold"`
+	UserSyncInterval uint   `mapstructure:"userSyncInterval"`    // 拉用户间隔，单位秒
+	TrafficSyncInterval uint `mapstructure:"trafficSyncInterval"` // 推送流量间隔，单位秒
 }
 
 type serverConfigObfsSalamander struct {
@@ -784,6 +786,13 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 		if v2boardConfig.ApiHost == "" || v2boardConfig.ApiKey == "" || v2boardConfig.NodeID == 0 {
 			return configError{Field: "auth.v2board", Err: errors.New("v2board config error")}
 		}
+		
+		// 设置默认间隔：拉用户5分钟，推送流量5分钟
+		userSyncInterval := time.Duration(300) * time.Second  // 默认300秒
+		if v2boardConfig.UserSyncInterval > 0 {
+			userSyncInterval = time.Duration(v2boardConfig.UserSyncInterval) * time.Second
+		}
+		
 		v2bAuth := auth.NewV2boardApiProvider(
 			logger,
 			c.V2board.ApiHost,
@@ -791,7 +800,7 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 			c.V2board.NodeID,
 			c.V2board.TrafficThreshold,
 		)
-		go v2bAuth.UpdateUsers(time.Minute * 5)
+		go v2bAuth.UpdateUsers(userSyncInterval)
 		hyConfig.Authenticator = v2bAuth
 		return nil
 	default:
@@ -810,7 +819,14 @@ func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
 		if !ok {
 			return configError{Field: "auth", Err: errors.New("auth type is not v2board")}
 		}
-		go p.PushTrafficToV2boardInterval(time.Minute * 5)
+		
+		// 设置默认流量推送间隔：5分钟
+		trafficSyncInterval := time.Duration(300) * time.Second  // 默认300秒
+		if c.V2board.TrafficSyncInterval > 0 {
+			trafficSyncInterval = time.Duration(c.V2board.TrafficSyncInterval) * time.Second
+		}
+		
+		go p.PushTrafficToV2boardInterval(trafficSyncInterval)
 		hyConfig.TrafficLogger = p
 	}
 	if c.TrafficStats.Listen != "" {

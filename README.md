@@ -28,6 +28,9 @@ v2board:
   apiHost: https://面板地址
   apiKey: 面板节点密钥
   nodeID: 节点ID
+  trafficThreshold: 1024        # 可选：流量推送阈值，单位: KB
+  userSyncInterval: 300         # 可选：拉取用户列表间隔，单位: 秒，默认 300 秒（5分钟）
+  trafficSyncInterval: 300      # 可选：推送流量统计间隔，单位: 秒，默认 300 秒（5分钟）
 tls:
   type: tls
   cert: /etc/hysteria/tls.crt
