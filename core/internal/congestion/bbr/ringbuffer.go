@@ -98,14 +98,31 @@ func (r *RingBuffer[T]) Back() *T {
 // This method assume the queue is full.
 func (r *RingBuffer[T]) grow() {
 	oldRing := r.ring
-	newSize := len(oldRing) * 2
-	if newSize == 0 {
-		newSize = 1
-	}
+	oldSize := len(oldRing)
+
+	newSize := r.calculateNewSize(oldSize)
+
 	r.ring = make([]T, newSize)
 	headLen := copy(r.ring, oldRing[r.headPos:])
 	copy(r.ring[headLen:], oldRing[:r.headPos])
-	r.headPos, r.tailPos, r.full = 0, len(oldRing), false
+	r.headPos, r.tailPos, r.full = 0, oldSize, false
+}
+
+func (r *RingBuffer[T]) calculateNewSize(oldSize int) int {
+	if oldSize == 0 {
+		return 1
+	}
+
+	const threshold = 256
+	newSize := oldSize
+
+	if oldSize < threshold {
+		newSize = oldSize * 2
+	} else {
+		newSize = oldSize + (oldSize+3*threshold)/4
+	}
+
+	return newSize
 }
 
 // Clear removes all elements.
