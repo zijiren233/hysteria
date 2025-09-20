@@ -84,7 +84,7 @@ func copyTwoWayEx(
 ) error {
 	var wg sync.WaitGroup
 	var needExit atomic.Bool
-	var err atomic.Value
+	var err atomic.Pointer[error]
 
 	wg.Add(1)
 	go func() {
@@ -95,7 +95,7 @@ func copyTwoWayEx(
 			return l.LogTraffic(id, 0, n)
 		})
 		if e != nil {
-			err.CompareAndSwap(nil, e)
+			err.CompareAndSwap(nil, &e)
 		}
 		needExit.Store(true)
 	}()
@@ -106,13 +106,17 @@ func copyTwoWayEx(
 		return l.LogTraffic(id, n, 0)
 	})
 	if e != nil {
-		err.CompareAndSwap(nil, e)
+		err.CompareAndSwap(nil, &e)
 	}
 	needExit.Store(true)
 
 	wg.Wait()
 
-	e, _ = err.Load().(error)
+	ep := err.Load()
+	if ep != nil {
+		e = *ep
+	}
+
 	return e
 }
 
@@ -121,26 +125,30 @@ func copyTwoWayEx(
 func copyTwoWay(serverRw, remoteRw io.ReadWriter) error {
 	var wg sync.WaitGroup
 	var needExit atomic.Bool
-	var err atomic.Value
+	var err atomic.Pointer[error]
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		e := copyBufferLog(serverRw, remoteRw, &needExit, nil)
 		if e != nil {
-			err.CompareAndSwap(nil, e)
+			err.CompareAndSwap(nil, &e)
 		}
 		needExit.Store(true)
 	}()
 
 	e := copyBufferLog(remoteRw, serverRw, &needExit, nil)
 	if e != nil {
-		err.CompareAndSwap(nil, e)
+		err.CompareAndSwap(nil, &e)
 	}
 	needExit.Store(true)
 
 	wg.Wait()
 
-	e, _ = err.Load().(error)
+	ep := err.Load()
+	if ep != nil {
+		e = *ep
+	}
+
 	return e
 }
