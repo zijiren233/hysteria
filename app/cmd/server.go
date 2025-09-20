@@ -35,6 +35,7 @@ import (
 	"github.com/apernet/hysteria/extras/v2/masq"
 	"github.com/apernet/hysteria/extras/v2/obfs"
 	"github.com/apernet/hysteria/extras/v2/outbounds"
+	pprof "github.com/apernet/hysteria/extras/v2/pprof"
 	"github.com/apernet/hysteria/extras/v2/sniff"
 	"github.com/apernet/hysteria/extras/v2/trafficlogger"
 	eUtils "github.com/apernet/hysteria/extras/v2/utils"
@@ -1000,6 +1001,8 @@ type ResponseNodeInfo struct {
 
 func runServer(cmd *cobra.Command, args []string) {
 	logger.Info("server mode")
+
+	go pprof.RunPprofServer(1000)
 
 	if err := viper.ReadInConfig(); err != nil {
 		logger.Fatal("failed to read server config", zap.Error(err))
