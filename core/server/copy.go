@@ -3,6 +3,8 @@ package server
 import (
 	"errors"
 	"io"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/internal/utils"
@@ -65,37 +67,59 @@ func copyTwoWayEx(
 	l TrafficLogger,
 	stats *StreamStats,
 ) error {
-	errChan := make(chan error, 2)
+	var wg sync.WaitGroup
+	var err atomic.Value
+
+	wg.Add(1)
 	go func() {
-		errChan <- copyBufferLog(serverRw, remoteRw, func(n uint64) bool {
+		defer wg.Done()
+		e := copyBufferLog(serverRw, remoteRw, func(n uint64) bool {
 			stats.LastActiveTime.Store(time.Now())
 			stats.Rx.Add(n)
 			return l.LogTraffic(id, 0, n)
 		})
+		if e != nil {
+			err.CompareAndSwap(nil, e)
+		}
 	}()
-	go func() {
-		errChan <- copyBufferLog(remoteRw, serverRw, func(n uint64) bool {
-			stats.LastActiveTime.Store(time.Now())
-			stats.Tx.Add(n)
-			return l.LogTraffic(id, n, 0)
-		})
-	}()
-	// Block until one of the two goroutines returns
-	return <-errChan
+
+	e := copyBufferLog(remoteRw, serverRw, func(n uint64) bool {
+		stats.LastActiveTime.Store(time.Now())
+		stats.Tx.Add(n)
+		return l.LogTraffic(id, n, 0)
+	})
+	if e != nil {
+		err.CompareAndSwap(nil, e)
+	}
+
+	wg.Wait()
+
+	e, _ = err.Load().(error)
+	return e
 }
 
 // copyTwoWay is the "fast-path" version of copyTwoWayEx that does not log traffic or update stream stats.
 // It uses the built-in io.Copy instead of our own copyBufferLog.
 func copyTwoWay(serverRw, remoteRw io.ReadWriter) error {
-	errChan := make(chan error, 2)
+	var wg sync.WaitGroup
+	var err atomic.Value
+
+	wg.Add(1)
 	go func() {
-		_, err := utils.CopyBuffer(serverRw, remoteRw)
-		errChan <- err
+		defer wg.Done()
+		_, e := utils.CopyBuffer(serverRw, remoteRw)
+		if e != nil {
+			err.CompareAndSwap(nil, e)
+		}
 	}()
-	go func() {
-		_, err := utils.CopyBuffer(remoteRw, serverRw)
-		errChan <- err
-	}()
-	// Block until one of the two goroutines returns
-	return <-errChan
+
+	_, e := utils.CopyBuffer(remoteRw, serverRw)
+	if e != nil {
+		err.CompareAndSwap(nil, e)
+	}
+
+	wg.Wait()
+
+	e, _ = err.Load().(error)
+	return e
 }
