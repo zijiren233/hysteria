@@ -97,9 +97,9 @@ func readConnectionID(r io.Reader, cid []byte) error {
 }
 
 func beUint32(r io.Reader) (uint32, error) {
-	b := make([]byte, 4)
-	if _, err := io.ReadFull(r, b); err != nil {
+	b := [4]byte{}
+	if _, err := io.ReadFull(r, b[:]); err != nil {
 		return 0, err
 	}
-	return binary.BigEndian.Uint32(b), nil
+	return binary.BigEndian.Uint32(b[:]), nil
 }
