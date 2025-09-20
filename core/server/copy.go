@@ -10,7 +10,7 @@ import (
 
 const (
 	trafficReportInterval  = 10 * time.Second
-	trafficReportThreshold = 1024 * 1024 // 1MB
+	trafficReportThreshold = 1024 * 1024 * 1024 // 10MB
 )
 
 var errDisconnect = errors.New("traffic logger requested disconnect")
