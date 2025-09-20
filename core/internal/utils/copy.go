@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-const DefaultBufferSize = 32 * 1024
+const DefaultBufferSize = 8 * 1024
 
 var sharedBufferPool = sync.Pool{
 	New: func() any {
