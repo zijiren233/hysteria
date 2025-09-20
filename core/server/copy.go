@@ -17,7 +17,12 @@ const (
 
 var errDisconnect = errors.New("traffic logger requested disconnect")
 
-func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error {
+func copyBufferLog(
+	dst io.Writer,
+	src io.Reader,
+	needExit *atomic.Bool,
+	log func(n uint64) bool,
+) error {
 	bufP := utils.GetBuffer()
 	defer utils.PutBuffer(bufP)
 	buf := *bufP
@@ -25,6 +30,14 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 	lastReportTime := time.Now()
 
 	for {
+		if needExit.Load() {
+			if log != nil && unreported > 0 {
+				if !log(uint64(unreported)) {
+					return errDisconnect
+				}
+			}
+			return nil
+		}
 		nr, er := src.Read(buf)
 		if nr > 0 {
 			unreported += nr
@@ -33,7 +46,7 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 			shouldReport := unreported >= trafficReportThreshold ||
 				time.Since(lastReportTime) >= trafficReportInterval
 
-			if shouldReport && unreported > 0 {
+			if log != nil && shouldReport && unreported > 0 {
 				if !log(uint64(unreported)) {
 					// Log returns false, which means that the client should be disconnected
 					return errDisconnect
@@ -49,8 +62,10 @@ func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error 
 		}
 		if er != nil {
 			// Report any remaining unreported traffic before returning
-			if unreported > 0 {
-				log(uint64(unreported))
+			if log != nil && unreported > 0 {
+				if !log(uint64(unreported)) {
+					return errDisconnect
+				}
 			}
 			if er == io.EOF {
 				// EOF should not be considered as an error
@@ -68,12 +83,13 @@ func copyTwoWayEx(
 	stats *StreamStats,
 ) error {
 	var wg sync.WaitGroup
+	var needExit atomic.Bool
 	var err atomic.Value
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		e := copyBufferLog(serverRw, remoteRw, func(n uint64) bool {
+		e := copyBufferLog(serverRw, remoteRw, &needExit, func(n uint64) bool {
 			stats.LastActiveTime.Store(time.Now())
 			stats.Rx.Add(n)
 			return l.LogTraffic(id, 0, n)
@@ -81,9 +97,10 @@ func copyTwoWayEx(
 		if e != nil {
 			err.CompareAndSwap(nil, e)
 		}
+		needExit.Store(true)
 	}()
 
-	e := copyBufferLog(remoteRw, serverRw, func(n uint64) bool {
+	e := copyBufferLog(remoteRw, serverRw, &needExit, func(n uint64) bool {
 		stats.LastActiveTime.Store(time.Now())
 		stats.Tx.Add(n)
 		return l.LogTraffic(id, n, 0)
@@ -91,6 +108,7 @@ func copyTwoWayEx(
 	if e != nil {
 		err.CompareAndSwap(nil, e)
 	}
+	needExit.Store(true)
 
 	wg.Wait()
 
@@ -102,21 +120,24 @@ func copyTwoWayEx(
 // It uses the built-in io.Copy instead of our own copyBufferLog.
 func copyTwoWay(serverRw, remoteRw io.ReadWriter) error {
 	var wg sync.WaitGroup
+	var needExit atomic.Bool
 	var err atomic.Value
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, e := utils.CopyBuffer(serverRw, remoteRw)
+		e := copyBufferLog(serverRw, remoteRw, &needExit, nil)
 		if e != nil {
 			err.CompareAndSwap(nil, e)
 		}
+		needExit.Store(true)
 	}()
 
-	_, e := utils.CopyBuffer(remoteRw, serverRw)
+	e := copyBufferLog(remoteRw, serverRw, &needExit, nil)
 	if e != nil {
 		err.CompareAndSwap(nil, e)
 	}
+	needExit.Store(true)
 
 	wg.Wait()
 
