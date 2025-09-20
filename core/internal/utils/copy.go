@@ -9,19 +9,19 @@ import (
 const DefaultBufferSize = 32 * 1024
 
 var sharedBufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buffer := make([]byte, DefaultBufferSize)
 		return &buffer
 	},
 }
 
-func getBuffer() *[]byte {
+func GetBuffer() *[]byte {
 	buffer := sharedBufferPool.Get().(*[]byte)
 	*buffer = (*buffer)[:cap(*buffer)]
 	return buffer
 }
 
-func putBuffer(buffer *[]byte) {
+func PutBuffer(buffer *[]byte) {
 	if buffer != nil {
 		*buffer = (*buffer)[:cap(*buffer)]
 		sharedBufferPool.Put(buffer)
@@ -29,8 +29,8 @@ func putBuffer(buffer *[]byte) {
 }
 
 func CopyBuffer(dst io.Writer, src io.Reader) (written int64, err error) {
-	buf := getBuffer()
-	defer putBuffer(buf)
+	buf := GetBuffer()
+	defer PutBuffer(buf)
 	for {
 		nr, er := src.Read(*buf)
 		if nr > 0 {

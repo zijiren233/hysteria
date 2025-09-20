@@ -150,8 +150,14 @@ func (e *udpSessionEntry) initConn(firstMsg *protocol.UDPMessage) error {
 // Exit when either the underlying UDP connection returns error (e.g. closed),
 // or the IO returns error when sending.
 func (e *udpSessionEntry) receiveLoop() {
-	udpBuf := make([]byte, protocol.MaxUDPSize)
-	msgBuf := make([]byte, protocol.MaxUDPSize)
+	udpBufP := utils.GetBuffer()
+	defer utils.PutBuffer(udpBufP)
+	udpBuf := *udpBufP
+
+	msgBufP := utils.GetBuffer()
+	defer utils.PutBuffer(msgBufP)
+	msgBuf := *msgBufP
+
 	for {
 		udpN, rAddr, err := e.conn.ReadFrom(udpBuf)
 		if err != nil {

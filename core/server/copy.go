@@ -16,7 +16,9 @@ const (
 var errDisconnect = errors.New("traffic logger requested disconnect")
 
 func copyBufferLog(dst io.Writer, src io.Reader, log func(n uint64) bool) error {
-	buf := make([]byte, 32*1024)
+	bufP := utils.GetBuffer()
+	defer utils.PutBuffer(bufP)
+	buf := *bufP
 	var unreported int
 	lastReportTime := time.Now()
 
