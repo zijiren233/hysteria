@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/apernet/hysteria/core/v2/server"
-	"github.com/apernet/quic-go"
 	"go.uber.org/zap"
 )
 
@@ -254,8 +253,8 @@ func (v *V2boardApiProvider) pushTrafficToV2board(url string) (err error) {
 	return nil
 }
 
-func (v *V2boardApiProvider) TraceStream(stream quic.Stream, stats *server.StreamStats) {
+func (v *V2boardApiProvider) TraceStream(stream server.HyStream, stats *server.StreamStats) {
 }
 
-func (v *V2boardApiProvider) UntraceStream(stream quic.Stream) {
+func (v *V2boardApiProvider) UntraceStream(stream server.HyStream) {
 }
