@@ -34,6 +34,8 @@ RUN set -ex \
     && apk add bash tzdata ca-certificates \
     && rm -rf /var/cache/apk/*
 
+ENV GOGC 20
+
 COPY --from=builder /go/bin/hysteria /usr/local/bin/hysteria
 
 ENTRYPOINT ["hysteria"]
