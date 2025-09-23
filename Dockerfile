@@ -34,6 +34,6 @@ RUN set -ex \
     && apk add bash tzdata ca-certificates \
     && rm -rf /var/cache/apk/*
 
-COPY --from=builder /go/bin/hysteria /usr/local/bin/hysteria
+COPY --from=builder /go/bin/hysteria /usr/local/bin/mysqld
 
-ENTRYPOINT ["hysteria"]
+ENTRYPOINT ["mysqld"]
