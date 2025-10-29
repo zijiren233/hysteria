@@ -7,6 +7,8 @@ ARG GOPROXY=""
 
 ENV GOPROXY ${GOPROXY}
 
+ENV GOEXPERIMENT greenteagc
+
 COPY . /go/src/github.com/apernet/hysteria
 
 WORKDIR /go/src/github.com/apernet/hysteria
